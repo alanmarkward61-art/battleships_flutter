@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../logic/game_state.dart';
 import '../widgets/grid_widget.dart';
 import '../widgets/fleet_status_widget.dart';
+import '../widgets/video_background.dart';
 
 class GameScreen extends StatelessWidget {
   const GameScreen({Key? key}) : super(key: key);
@@ -165,36 +166,47 @@ class GameScreen extends StatelessWidget {
 
   Widget _buildCelebrationOverlay(BuildContext context, bool playerWon) {
     return Positioned.fill(
-      child: Container(
-        color: Colors.black.withOpacity(0.8),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                playerWon ? 'VICTORY SECURED' : 'FLEET DESTROYED',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: playerWon ? Colors.greenAccent : Colors.redAccent,
-                  fontFamily: 'Courier',
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  side: const BorderSide(color: Colors.greenAccent, width: 2),
-                ),
-                onPressed: () => context.read<GameState>().resetGame(),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Text('DEPLOY NEW FLEET', style: TextStyle(color: Colors.greenAccent, fontSize: 20, fontFamily: 'Courier')),
-                ),
-              ),
-            ],
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: VideoBackground(
+              videoPath: playerWon ? 'assets/video/Epicwin.mp4' : 'assets/video/Epicfail.mp4',
+            ),
           ),
-        ),
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.4),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      playerWon ? 'VICTORY SECURED' : 'FLEET DESTROYED',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: playerWon ? Colors.greenAccent : Colors.redAccent,
+                        fontFamily: 'Courier',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        side: const BorderSide(color: Colors.greenAccent, width: 2),
+                      ),
+                      onPressed: () => context.read<GameState>().resetGame(),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Text('DEPLOY NEW FLEET', style: TextStyle(color: Colors.greenAccent, fontSize: 20, fontFamily: 'Courier')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

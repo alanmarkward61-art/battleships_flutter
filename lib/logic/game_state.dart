@@ -20,8 +20,6 @@ class GameState extends ChangeNotifier {
   Difficulty difficulty = Difficulty.standard;
 
   // AI State
-  List<Coordinate> huntQueue = [];
-
   GameState() {
     _initGame();
   }
@@ -45,7 +43,6 @@ class GameState extends ChangeNotifier {
   void _initGame() {
     playerBoard = Board(gridSize);
     computerBoard = Board(gridSize);
-    huntQueue.clear();
     phase = GamePhase.setup;
 
     computerBoard.placeShipsRandomly(_createFleet());
@@ -127,12 +124,6 @@ class GameState extends ChangeNotifier {
     if (cell.state == CellState.ship) {
       cell.state = CellState.hit;
       cell.ship!.hits++;
-      _populateHuntQueue(target);
-      
-      // Smart AI clear queue if ship is sunk (since ships can't touch)
-      if (cell.ship!.isSunk && difficulty != Difficulty.easy) {
-        huntQueue.clear();
-      }
 
       notifyListeners(); // Show hit before playing audio
       await AudioService.playComputerHit();
@@ -160,16 +151,17 @@ class GameState extends ChangeNotifier {
   Coordinate _getComputerTarget() {
     final random = Random();
     
-    while (huntQueue.isNotEmpty) {
-      Coordinate c = huntQueue.removeAt(0);
-      if (_isValidTarget(c, isHunting: false)) return c;
+    // Smart Hunt Logic (Standard & Hard)
+    if (difficulty != Difficulty.easy) {
+      Coordinate? huntTarget = _getSmartHuntTarget();
+      if (huntTarget != null) return huntTarget;
     }
 
     List<Coordinate> validTargets = [];
     for (int r = 0; r < gridSize; r++) {
       for (int c = 0; c < gridSize; c++) {
         Coordinate coord = Coordinate(r, c);
-        if (_isValidTarget(coord, isHunting: true)) {
+        if (_isValidTarget(coord, isLattice: true)) {
           validTargets.add(coord);
         }
       }
@@ -179,7 +171,7 @@ class GameState extends ChangeNotifier {
       for (int r = 0; r < gridSize; r++) {
         for (int c = 0; c < gridSize; c++) {
           Coordinate coord = Coordinate(r, c);
-          if (_isValidTarget(coord, isHunting: false)) {
+          if (_isValidTarget(coord, isLattice: false)) {
             validTargets.add(coord);
           }
         }
@@ -189,7 +181,64 @@ class GameState extends ChangeNotifier {
     return validTargets[random.nextInt(validTargets.length)];
   }
 
-  bool _isValidTarget(Coordinate c, {required bool isHunting}) {
+  Coordinate? _getSmartHuntTarget() {
+    // Group active hits by ship
+    Map<Ship, List<Coordinate>> activeShipHits = {};
+    for (int r = 0; r < gridSize; r++) {
+      for (int c = 0; c < gridSize; c++) {
+        Cell cell = playerBoard.grid[r][c];
+        if (cell.state == CellState.hit && cell.ship != null && !cell.ship!.isSunk) {
+          activeShipHits.putIfAbsent(cell.ship!, () => []).add(Coordinate(r, c));
+        }
+      }
+    }
+
+    if (activeShipHits.isEmpty) return null;
+
+    List<Coordinate> possibleTargets = [];
+    
+    for (var hits in activeShipHits.values) {
+      if (hits.length == 1) {
+        // Single hit: try all 4 orthogonal neighbors
+        Coordinate h = hits.first;
+        List<Coordinate> neighbors = [
+          Coordinate(h.row - 1, h.col),
+          Coordinate(h.row + 1, h.col),
+          Coordinate(h.row, h.col - 1),
+          Coordinate(h.row, h.col + 1),
+        ];
+        for (var n in neighbors) {
+          if (_isValidTarget(n, isLattice: false)) {
+            possibleTargets.add(n);
+          }
+        }
+      } else {
+        // Multiple hits: determine axis (horizontal or vertical)
+        bool sameRow = hits.every((c) => c.row == hits.first.row);
+        bool sameCol = hits.every((c) => c.col == hits.first.col);
+        
+        if (sameRow && !sameCol) {
+          hits.sort((a, b) => a.col.compareTo(b.col));
+          Coordinate minH = hits.first;
+          Coordinate maxH = hits.last;
+          if (_isValidTarget(Coordinate(minH.row, minH.col - 1), isLattice: false)) possibleTargets.add(Coordinate(minH.row, minH.col - 1));
+          if (_isValidTarget(Coordinate(maxH.row, maxH.col + 1), isLattice: false)) possibleTargets.add(Coordinate(maxH.row, maxH.col + 1));
+        } else if (!sameRow && sameCol) {
+          hits.sort((a, b) => a.row.compareTo(b.row));
+          Coordinate minH = hits.first;
+          Coordinate maxH = hits.last;
+          if (_isValidTarget(Coordinate(minH.row - 1, minH.col), isLattice: false)) possibleTargets.add(Coordinate(minH.row - 1, minH.col));
+          if (_isValidTarget(Coordinate(maxH.row + 1, maxH.col), isLattice: false)) possibleTargets.add(Coordinate(maxH.row + 1, maxH.col));
+        }
+      }
+    }
+
+    if (possibleTargets.isEmpty) return null;
+    possibleTargets.shuffle();
+    return possibleTargets.first;
+  }
+
+  bool _isValidTarget(Coordinate c, {required bool isLattice}) {
     if (c.row < 0 || c.row >= gridSize || c.col < 0 || c.col >= gridSize) return false;
     Cell cell = playerBoard.grid[c.row][c.col];
     
@@ -199,7 +248,7 @@ class GameState extends ChangeNotifier {
       if (_isAdjacentToSunkShip(c)) return false;
     }
 
-    if (isHunting && difficulty == Difficulty.hard) {
+    if (isLattice && difficulty == Difficulty.hard) {
       if ((c.row + c.col) % 2 != 0) return false;
     }
 
@@ -217,13 +266,5 @@ class GameState extends ChangeNotifier {
   bool _isCellSunkShip(int r, int c) {
     Cell cell = playerBoard.grid[r][c];
     return cell.state == CellState.hit && cell.ship != null && cell.ship!.isSunk;
-  }
-
-  void _populateHuntQueue(Coordinate c) {
-    huntQueue.add(Coordinate(c.row - 1, c.col));
-    huntQueue.add(Coordinate(c.row + 1, c.col));
-    huntQueue.add(Coordinate(c.row, c.col - 1));
-    huntQueue.add(Coordinate(c.row, c.col + 1));
-    huntQueue.shuffle();
   }
 }
